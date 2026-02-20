@@ -21,21 +21,38 @@ bash init.sh install
 - Развернёт `awg-manager.sh` в `/etc/amnezia/amneziawg/`
 - Скачает и установит `warp_setup.sh` в `/etc/amnezia/warp/`
 
-После установки запустите WARP:
+## Полная последовательность настройки
+
+### Шаг 1 — Установить WARP-туннель
 
 ```bash
 bash /etc/amnezia/warp/warp_setup.sh install
 ```
 
-## Управление пользователями
-
-Все команды выполняются через `/etc/amnezia/amneziawg/awg-manager.sh`.
-
-### Инициализация сервера
+### Шаг 2 — Инициализировать AWG-сервер
 
 ```bash
 bash /etc/amnezia/amneziawg/awg-manager.sh -i -s <ВНЕШНИЙ_IP_СЕРВЕРА>
 ```
+
+### Шаг 3 — Создать пользователя
+
+```bash
+bash /etc/amnezia/amneziawg/awg-manager.sh -c -u <имя>
+```
+
+### Шаг 4 — Получить конфиг / QR-код
+
+```bash
+bash /etc/amnezia/amneziawg/awg-manager.sh -q -u <имя>   # QR-код
+bash /etc/amnezia/amneziawg/awg-manager.sh -p -u <имя>   # текстовый конфиг
+```
+
+---
+
+## Управление пользователями
+
+Все команды выполняются через `/etc/amnezia/amneziawg/awg-manager.sh`.
 
 ### Создать пользователя
 
