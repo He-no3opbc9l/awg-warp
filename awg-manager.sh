@@ -46,7 +46,7 @@ _auto_server_name() {
     echo "awg0"  # fallback
 }
 
-# Find the first free 10.X.Y.0/24 subnet that doesn't collide with existing AWG configs
+# Find a free random 10.X.Y.0/24 subnet that doesn't collide with existing AWG configs
 _auto_ip_prefix() {
     declare -A USED_PREFIXES
 
@@ -74,7 +74,20 @@ _auto_ip_prefix() {
         fi
     done
 
-    # Pick first free 10.0.X
+    # Pick a random free 10.X.Y (X: 0-255, Y: 0-255, excluding 0.0 and reserved ranges)
+    local attempts=0
+    while [ $attempts -lt 200 ]; do
+        local oct2=$(( RANDOM % 256 ))
+        local oct3=$(( RANDOM % 256 ))
+        local candidate="10.${oct2}.${oct3}"
+        if [ -z "${USED_PREFIXES[$candidate]}" ]; then
+            echo "$candidate"
+            return
+        fi
+        attempts=$(( attempts + 1 ))
+    done
+
+    # Fallback: sequential scan if random keeps hitting used prefixes
     for i in $(seq 1 254); do
         local candidate="10.0.${i}"
         if [ -z "${USED_PREFIXES[$candidate]}" ]; then
@@ -83,7 +96,7 @@ _auto_ip_prefix() {
         fi
     done
 
-    echo "10.0.1"  # fallback
+    echo "10.0.1"  # last resort fallback
 }
 
 # Find a free UDP port starting from base
