@@ -35,6 +35,25 @@ installing() {
     install_awg_manager
     install_warp
     init_awg_server
+    print_summary
+}
+
+print_summary() {
+    echo ""
+    colorized_echo green "╔══════════════════════════════════════════════╗"
+    colorized_echo green "║    awg-warp installation complete!           ║"
+    colorized_echo green "║    Client → AWG → VPS → WARP → Internet      ║"
+    colorized_echo green "╚══════════════════════════════════════════════╝"
+    echo ""
+    colorized_echo cyan "Next steps:"
+    colorized_echo cyan "  1. Create a user:"
+    echo "       bash /etc/amnezia/amneziawg/awg-manager.sh -c -u <username>"
+    echo ""
+    colorized_echo cyan "  2. Get config for the user:"
+    echo "       bash /etc/amnezia/amneziawg/awg-manager.sh -q -u <username>   # QR code"
+    echo "       bash /etc/amnezia/amneziawg/awg-manager.sh -p -u <username>   # text config"
+    echo "       cat /root/awg-warp/<username>.conf                            # copy-paste config"
+    echo ""
 }
 check_running_as_root() {
     if [ "$(id -u)" != "0" ]; then
@@ -291,13 +310,17 @@ init_awg_server() {
 
     colorized_echo blue "Detecting public IP for AWG server..."
 
-    # Try to get public IP
+    # Try to get public IPv4 only (-4 forces IPv4 transport)
     local PUBLIC_IP
-    PUBLIC_IP=$(curl -fsSL --max-time 5 https://ifconfig.me 2>/dev/null \
-        || curl -fsSL --max-time 5 https://api.ipify.org 2>/dev/null \
-        || curl -fsSL --max-time 5 https://icanhazip.com 2>/dev/null \
+    PUBLIC_IP=$(curl -fsSL -4 --max-time 5 https://ifconfig.me 2>/dev/null \
+        || curl -fsSL -4 --max-time 5 https://api.ipify.org 2>/dev/null \
+        || curl -fsSL -4 --max-time 5 https://icanhazip.com 2>/dev/null \
         || true)
     PUBLIC_IP=$(echo "$PUBLIC_IP" | tr -d '[:space:]')
+    # Reject if result looks like IPv6
+    if echo "$PUBLIC_IP" | grep -q ':'; then
+        PUBLIC_IP=""
+    fi
 
     if [ -z "$PUBLIC_IP" ]; then
         colorized_echo red "Could not detect public IP automatically."
@@ -310,10 +333,69 @@ init_awg_server() {
     bash "$AWG_MANAGER" -i -s "$PUBLIC_IP"
 }
 
+usage() {
+    echo "Usage: $0 {install|remove}"
+    echo ""
+    echo "  install  - Install and configure awg-warp (WARP + AWG server)"
+    echo "  remove   - Remove awg-warp components (keeps third-party AWG servers intact)"
+    exit 1
+}
+
+removing() {
+    check_running_as_root
+    local AWG_CONF_DIR="/etc/amnezia/amneziawg"
+
+    colorized_echo blue "Removing awg-warp components..."
+
+    # Stop and remove only AWG interfaces created by awg-warp (identified by .awg_iface_* markers)
+    for marker in "${AWG_CONF_DIR}"/.awg_iface_*; do
+        [ -f "$marker" ] || continue
+        local name
+        name=$(cat "$marker")
+        colorized_echo blue "Stopping AWG interface: ${name}"
+        awg-quick down "$name" 2>/dev/null || true
+        systemctl disable "awg-quick@${name}.service" 2>/dev/null || true
+        rm -f "${AWG_CONF_DIR}/${name}.conf"
+        rm -rf "${AWG_CONF_DIR}/keys/${name}"
+        rm -f "$marker"
+    done
+
+    # Remove user keys and awg-manager only if no third-party configs remain
+    if ! ls "${AWG_CONF_DIR}"/awg*.conf &>/dev/null 2>&1; then
+        rm -rf "${AWG_CONF_DIR}/keys"
+        rm -f "${AWG_CONF_DIR}/awg-manager.sh"
+        rmdir "${AWG_CONF_DIR}" 2>/dev/null || true
+        colorized_echo green "AWG config directory removed"
+    else
+        colorized_echo yellow "Third-party AWG configs detected — keeping ${AWG_CONF_DIR}"
+    fi
+
+    # Stop and remove WARP tunnel
+    colorized_echo blue "Stopping WARP tunnel..."
+    wg-quick down /etc/amnezia/warp/warp0.conf 2>/dev/null || true
+    systemctl disable wg-quick@warp0.service 2>/dev/null || true
+    rm -f /etc/systemd/system/wg-quick@warp0.service
+    systemctl daemon-reload
+    rm -rf /etc/amnezia/warp
+    colorized_echo green "WARP tunnel removed"
+
+    # Remove /etc/amnezia if now empty
+    rmdir /etc/amnezia 2>/dev/null || true
+
+    # Clean up leftover WARP ip rules
+    ip rule del fwmark 51820 lookup main suppress_prefixlength 0 priority 90 2>/dev/null || true
+    ip rule list | grep 'lookup 51820' | awk '{print $1}' | sed 's/://' | \
+        xargs -I{} ip rule del prio {} 2>/dev/null || true
+
+    colorized_echo green "awg-warp removed successfully"
+    colorized_echo yellow "Packages (wireguard-tools, amneziawg-go, awg) were NOT removed"
+}
+
 case "$1" in
     install)
     shift; installing "$@";;
+    remove)
+    shift; removing "$@";;
     *)
     usage;;
 esac
-

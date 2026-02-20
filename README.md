@@ -94,47 +94,13 @@ bash /etc/amnezia/amneziawg/awg-manager.sh -U -u <имя>   # разблокир
 
 ## Полное удаление awg-warp
 
-При инициализации `awg-manager.sh -i` оставляет маркер-файл `.awg_iface_<name>` в `/etc/amnezia/amneziawg/`. Скрипт удаления ориентируется именно на эти маркеры — сторонние AWG-серверы в той же папке затронуты **не будут**.
-
 ```bash
-# 1. Остановить и удалить только AWG-интерфейсы, созданные awg-warp (по маркерам .awg_iface_*)
-for marker in /etc/amnezia/amneziawg/.awg_iface_*; do
-    [ -f "$marker" ] || continue
-    name=$(cat "$marker")
-    awg-quick down "$name" 2>/dev/null || true
-    systemctl disable "awg-quick@${name}.service" 2>/dev/null || true
-    rm -f "/etc/amnezia/amneziawg/${name}.conf"
-    rm -rf "/etc/amnezia/amneziawg/keys/${name}"
-    rm -f "$marker"
-done
-
-# 2. Удалить пользовательские ключи и awg-manager (только если нет чужих конфигов)
-if ! ls /etc/amnezia/amneziawg/awg*.conf &>/dev/null 2>&1; then
-    rm -rf /etc/amnezia/amneziawg/keys
-    rm -f /etc/amnezia/amneziawg/awg-manager.sh
-    rmdir /etc/amnezia/amneziawg 2>/dev/null || true
-fi
-
-# 3. Остановить и удалить WARP-туннель
-wg-quick down /etc/amnezia/warp/warp0.conf 2>/dev/null || true
-systemctl disable wg-quick@warp0.service 2>/dev/null || true
-rm -f /etc/systemd/system/wg-quick@warp0.service
-systemctl daemon-reload
-rm -rf /etc/amnezia/warp
-
-# 4. Удалить /etc/amnezia если она стала пустой
-rmdir /etc/amnezia 2>/dev/null || true
-
-# 5. Почистить оставшиеся ip rules от WARP
-ip rule del fwmark 51820 lookup main suppress_prefixlength 0 priority 90 2>/dev/null || true
-ip rule list | grep 'lookup 51820' | awk '{print $1}' | sed 's/://' | \
-    xargs -I{} ip rule del prio {} 2>/dev/null || true
-
-# 6. Убрать директорию проекта (опционально)
-rm -rf /root/awg-warp
+bash init.sh remove
 ```
 
-> **Не затрагивается:** сторонние AWG/WireGuard-конфиги и интерфейсы без маркера `.awg_iface_*`, пакеты системы (`wireguard-tools`, `amneziawg-go`, `awg`).
+Удаляет **только** компоненты awg-warp: WARP-туннель и AWG-интерфейсы, созданные этим скриптом (определяются по маркерам `.awg_iface_*`). Сторонние AWG-серверы в `/etc/amnezia/amneziawg/` **не затрагиваются**.
+
+> Пакеты системы (`wireguard-tools`, `amneziawg-go`, `awg`) не удаляются.
 
 
 ---
