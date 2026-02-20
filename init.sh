@@ -87,6 +87,9 @@ install_package () {
 }
 
 install_go() {
+    # Ensure /usr/local/go/bin is in PATH for already-installed Go
+    export PATH=$PATH:/usr/local/go/bin
+
     if command -v go &> /dev/null; then
         colorized_echo green "Go already installed: $(go version)"
         return 0
@@ -94,13 +97,22 @@ install_go() {
 
     colorized_echo blue "Installing Go..."
 
-    local GO_VERSION="1.25.3"
+    # Fetch the latest stable Go version from the official API
+    local GO_VERSION
+    GO_VERSION=$(curl -fsSL "https://go.dev/dl/?mode=json" 2>/dev/null | jq -r '.[0].version' | sed 's/^go//')
+    if [ -z "$GO_VERSION" ]; then
+        colorized_echo yellow "Could not fetch latest Go version, using fallback 1.23.6"
+        GO_VERSION="1.23.6"
+    fi
+    colorized_echo blue "Go version to install: ${GO_VERSION}"
+
     local GO_ARCHIVE="go${GO_VERSION}.linux-amd64.tar.gz"
-    local TEMP_DIR=$(mktemp -d)
+    local TEMP_DIR
+    TEMP_DIR=$(mktemp -d)
 
     cd "$TEMP_DIR"
     wget -q "https://go.dev/dl/${GO_ARCHIVE}" || {
-        colorized_echo red "Failed to download Go"
+        colorized_echo red "Failed to download Go ${GO_VERSION}"
         rm -rf "$TEMP_DIR"
         exit 1
     }
@@ -116,7 +128,7 @@ install_go() {
     cd /
     rm -rf "$TEMP_DIR"
 
-    # Add to PATH
+    # Add to PATH persistently
     if ! grep -q '/usr/local/go/bin' /etc/profile; then
         echo 'export PATH=$PATH:/usr/local/go/bin' >> /etc/profile
     fi
@@ -130,6 +142,9 @@ install_go() {
     fi
 }
 install_awg_awg_tools() {
+    # Ensure Go is in PATH (may have been installed in this session)
+    export PATH=$PATH:/usr/local/go/bin
+
     # Check if awg and amneziawg-go are already installed
     if command -v awg &> /dev/null && command -v amneziawg-go &> /dev/null; then
         colorized_echo green "AmneziaWG already installed"

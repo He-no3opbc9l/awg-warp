@@ -196,7 +196,7 @@ EOF
     fi
 
     # Always add the fwmark suppress rule (prevents routing loops for WARP itself)
-    postup_rules+="PostUp = ip rule add fwmark ${WARP_FWMARK} lookup main suppress_prefixlength 0 priority 90"
+    postup_rules+="PostUp = ip rule add fwmark ${WARP_FWMARK} lookup main suppress_prefixlength 0 priority 90 || true"
     postdown_rules+="PostDown = ip rule del fwmark ${WARP_FWMARK} lookup main suppress_prefixlength 0 priority 90 || true"
 
     cat > "$WARP_CONF" <<EOF
