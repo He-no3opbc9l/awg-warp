@@ -68,15 +68,42 @@ colorized_echo() {
 }
 
 check_deps() {
-    local missing=()
-    for cmd in wg curl jq; do
-        command -v "$cmd" &>/dev/null || missing+=("$cmd")
-    done
-    if [ ${#missing[@]} -gt 0 ]; then
-        colorized_echo red "Missing dependencies: ${missing[*]}"
-        colorized_echo yellow "Install them: apt install wireguard-tools jq curl"
+    local missing_pkgs=()
+
+    command -v wg      &>/dev/null || missing_pkgs+=("wireguard-tools")
+    command -v curl    &>/dev/null || missing_pkgs+=("curl")
+    command -v jq      &>/dev/null || missing_pkgs+=("jq")
+
+    if [ ${#missing_pkgs[@]} -eq 0 ]; then
+        return 0
+    fi
+
+    colorized_echo yellow "Installing missing dependencies: ${missing_pkgs[*]}"
+
+    if command -v apt-get &>/dev/null; then
+        apt-get update -y -qq
+        apt-get install -y -qq "${missing_pkgs[@]}"
+    elif command -v apt &>/dev/null; then
+        apt update -y -qq
+        apt install -y -qq "${missing_pkgs[@]}"
+    else
+        colorized_echo red "Cannot auto-install: apt not found."
+        colorized_echo yellow "Please install manually: ${missing_pkgs[*]}"
         exit 1
     fi
+
+    # Verify after install
+    local still_missing=()
+    command -v wg   &>/dev/null || still_missing+=("wg (wireguard-tools)")
+    command -v curl &>/dev/null || still_missing+=("curl")
+    command -v jq   &>/dev/null || still_missing+=("jq")
+
+    if [ ${#still_missing[@]} -gt 0 ]; then
+        colorized_echo red "Failed to install: ${still_missing[*]}"
+        exit 1
+    fi
+
+    colorized_echo green "Dependencies installed successfully"
 }
 
 # Register a new WARP device and get credentials
