@@ -34,6 +34,7 @@ installing() {
     install_awg_awg_tools
     install_awg_manager
     install_warp
+    init_awg_server
 }
 check_running_as_root() {
     if [ "$(id -u)" != "0" ]; then
@@ -252,11 +253,6 @@ install_warp() {
     local WARP_SETUP="/etc/amnezia/warp/warp_setup.sh"
     local WARP_DIR="/etc/amnezia/warp"
 
-    if [ -f "${WARP_DIR}/credentials.json" ]; then
-        colorized_echo green "WARP already configured"
-        return 0
-    fi
-
     colorized_echo blue "Installing WARP tunnel setup..."
 
     mkdir -p "$WARP_DIR" || {
@@ -264,17 +260,54 @@ install_warp() {
         exit 1
     }
 
-    # Copy warp_setup.sh from the same source as this init script
+    # Download warp_setup.sh
     local SCRIPT_URL="https://raw.githubusercontent.com/He-no3opbc9l/awg-warp/main/warp_setup.sh"
     wget -q -O "$WARP_SETUP" "$SCRIPT_URL" || {
         colorized_echo red "Failed to download warp_setup.sh"
         exit 1
     }
-
     chmod 700 "$WARP_SETUP"
-
     colorized_echo green "WARP setup script installed to ${WARP_SETUP}"
-    colorized_echo yellow "Run 'bash ${WARP_SETUP} install' after server init to activate WARP tunnel"
+
+    if [ -f "${WARP_DIR}/credentials.json" ]; then
+        colorized_echo green "WARP already registered, bringing tunnel up..."
+        bash "$WARP_SETUP" up
+        return 0
+    fi
+
+    # Register WARP and bring up warp0
+    bash "$WARP_SETUP" install
+}
+
+init_awg_server() {
+    local AWG_MANAGER="/etc/amnezia/amneziawg/awg-manager.sh"
+    local AWG_CONF_DIR="/etc/amnezia/amneziawg"
+
+    # Skip if already initialized
+    if ls "${AWG_CONF_DIR}"/awg*.conf &>/dev/null 2>&1; then
+        colorized_echo green "AWG server already initialized"
+        return 0
+    fi
+
+    colorized_echo blue "Detecting public IP for AWG server..."
+
+    # Try to get public IP
+    local PUBLIC_IP
+    PUBLIC_IP=$(curl -fsSL --max-time 5 https://ifconfig.me 2>/dev/null \
+        || curl -fsSL --max-time 5 https://api.ipify.org 2>/dev/null \
+        || curl -fsSL --max-time 5 https://icanhazip.com 2>/dev/null \
+        || true)
+    PUBLIC_IP=$(echo "$PUBLIC_IP" | tr -d '[:space:]')
+
+    if [ -z "$PUBLIC_IP" ]; then
+        colorized_echo red "Could not detect public IP automatically."
+        colorized_echo yellow "Please run manually: bash ${AWG_MANAGER} -i -s <YOUR_SERVER_IP>"
+        return 0
+    fi
+
+    colorized_echo green "Detected public IP: ${PUBLIC_IP}"
+    colorized_echo blue "Initializing AWG server..."
+    bash "$AWG_MANAGER" -i -s "$PUBLIC_IP"
 }
 
 case "$1" in

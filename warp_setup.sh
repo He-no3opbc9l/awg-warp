@@ -343,13 +343,12 @@ warp_install() {
     colorized_echo green "========================================"
     echo ""
     colorized_echo cyan "Next steps:"
-    colorized_echo cyan "  1. Initialize the AWG server (replace <SERVER_IP> with your VPS public IP):"
-    echo "       bash /etc/amnezia/amneziawg/awg-manager.sh -i -s <SERVER_IP>"
-    colorized_echo cyan "  2. Create a user:"
+    colorized_echo cyan "  1. Create a user:"
     echo "       bash /etc/amnezia/amneziawg/awg-manager.sh -c -u <username>"
-    colorized_echo cyan "  3. Show QR code or print config for the user:"
-    echo "       bash /etc/amnezia/amneziawg/awg-manager.sh -q -u <username>"
-    echo "       bash /etc/amnezia/amneziawg/awg-manager.sh -p -u <username>"
+    colorized_echo cyan "  2. Get config for the user:"
+    echo "       bash /etc/amnezia/amneziawg/awg-manager.sh -q -u <username>   # QR code"
+    echo "       bash /etc/amnezia/amneziawg/awg-manager.sh -p -u <username>   # text config"
+    echo "       cat /root/awg-warp/<username>.conf                            # copy-paste config"
 }
 
 warp_uninstall() {
