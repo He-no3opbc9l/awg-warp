@@ -195,7 +195,7 @@ function reload_server {
 function get_new_ip {
     declare -A IP_EXISTS
 
-    for IP in $(grep -i 'Address\s*=\s*' keys/*/*.conf | sed 's/\/[0-9]\+$//' | grep -Po '\d+$')
+    for IP in $(grep -ril 'Address\s*=\s*' keys/ 2>/dev/null | grep '\.conf$' | xargs grep -ih 'Address\s*=\s*' 2>/dev/null | sed 's/\/[0-9]\+$//' | grep -Po '\d+$')
     do
         IP_EXISTS[$IP]=1
     done
@@ -373,7 +373,8 @@ function create {
     USER_IP=$( get_new_ip )
 
     mkdir "keys/${USER}"
-    awg genkey | tee "keys/${USER}/private.key" | awg pubkey > "keys/${USER}/public.key" | awg genpsk > "keys/${USER}/psk.key"
+    awg genkey | tee "keys/${USER}/private.key" | awg pubkey > "keys/${USER}/public.key"
+    awg genpsk > "keys/${USER}/psk.key"
 
     USER_PVT_KEY=$(cat "keys/${USER}/private.key")
     USER_PUB_KEY=$(cat "keys/${USER}/public.key")
@@ -404,6 +405,12 @@ PresharedKey = ${USER_PSK_KEY}
 EOF
     add_user_to_server
     reload_server
+
+    # Copy user config to awg-warp directory
+    local CONFIGS_DIR="/root/awg-warp"
+    mkdir -p "$CONFIGS_DIR"
+    cp "keys/${USER}/${USER}.conf" "${CONFIGS_DIR}/${USER}.conf"
+    echo "Config copied to ${CONFIGS_DIR}/${USER}.conf"
 }
 
 cd $HOME_DIR

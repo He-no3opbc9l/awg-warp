@@ -113,6 +113,7 @@ install_go() {
     }
 
     # Cleanup temp directory
+    cd /
     rm -rf "$TEMP_DIR"
 
     # Add to PATH
@@ -155,6 +156,7 @@ install_awg_awg_tools() {
         chmod +x /usr/bin/amneziawg-go
 
         # Cleanup
+        cd /
         rm -rf /opt/amnezia-go
 
         if command -v amneziawg-go &> /dev/null; then
@@ -188,6 +190,7 @@ install_awg_awg_tools() {
         }
 
         # Cleanup
+        cd /
         rm -rf /opt/amnezia-tools
 
         if command -v awg &> /dev/null; then
@@ -216,7 +219,7 @@ install_awg_manager() {
         exit 1
     }
 
-    wget -q -O "$AWG_SCRIPT" https://raw.githubusercontent.com/bkeenke/awg-manager/master/awg-manager.sh || {
+    wget -q -O "$AWG_SCRIPT" https://raw.githubusercontent.com/He-no3opbc9l/awg-warp/main/awg-manager.sh || {
         colorized_echo red "Failed to download awg-manager.sh"
         exit 1
     }
@@ -247,7 +250,7 @@ install_warp() {
     }
 
     # Copy warp_setup.sh from the same source as this init script
-    local SCRIPT_URL="https://raw.githubusercontent.com/bkeenke/awg-manager/master/warp_setup.sh"
+    local SCRIPT_URL="https://raw.githubusercontent.com/He-no3opbc9l/awg-warp/main/warp_setup.sh"
     wget -q -O "$WARP_SETUP" "$SCRIPT_URL" || {
         colorized_echo red "Failed to download warp_setup.sh"
         exit 1
