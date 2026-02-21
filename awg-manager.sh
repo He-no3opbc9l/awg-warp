@@ -383,6 +383,16 @@ function create {
     fi
 
     SERVER_ENDPOINT=$(cat "keys/.server")
+
+    # If stored endpoint is IPv6, resolve external IPv4 for the client config
+    if echo "$SERVER_ENDPOINT" | grep -q ':'; then
+        IPV4=$(curl -4 -s --max-time 5 ifconfig.me 2>/dev/null || ip -4 addr show | grep -oP '(?<=inet )\d+\.\d+\.\d+\.\d+' | grep -v '^127\.' | head -1)
+        if [ -n "$IPV4" ]; then
+            echo "INFO: Endpoint is IPv6 ($SERVER_ENDPOINT), using IPv4 instead: $IPV4"
+            SERVER_ENDPOINT="$IPV4"
+        fi
+    fi
+
     USER_IP=$( get_new_ip )
 
     mkdir "keys/${USER}"
