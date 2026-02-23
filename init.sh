@@ -26,6 +26,28 @@ colorized_echo() {
 }
 
 installing() {
+    # Parse optional arguments (e.g., --port 27015)
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --port)
+                if [ -z "$2" ] || [[ "$2" == --* ]]; then
+                    colorized_echo red "Error: --port requires a port number"
+                    exit 1
+                fi
+                if ! [[ "$2" =~ ^[0-9]+$ ]] || [ "$2" -lt 1 ] || [ "$2" -gt 65535 ]; then
+                    colorized_echo red "Error: port must be a number between 1 and 65535"
+                    exit 1
+                fi
+                CUSTOM_PORT="$2"
+                shift 2
+                ;;
+            *)
+                colorized_echo red "Unknown option: $1"
+                usage
+                ;;
+        esac
+    done
+
     check_running_as_root
     detect_os
     detect_and_update_package_manager
@@ -330,14 +352,22 @@ init_awg_server() {
 
     colorized_echo green "Detected public IP: ${PUBLIC_IP}"
     colorized_echo blue "Initializing AWG server..."
-    bash "$AWG_MANAGER" -i -s "$PUBLIC_IP"
+
+    local PORT_ARG=""
+    if [ -n "${CUSTOM_PORT:-}" ]; then
+        PORT_ARG="-P ${CUSTOM_PORT}"
+        colorized_echo cyan "Using custom port: ${CUSTOM_PORT}"
+    fi
+
+    bash "$AWG_MANAGER" -i -s "$PUBLIC_IP" $PORT_ARG
 }
 
 usage() {
-    echo "Usage: $0 {install|remove}"
+    echo "Usage: $0 {install [--port <port>]|remove}"
     echo ""
-    echo "  install  - Install and configure awg-warp (WARP + AWG server)"
-    echo "  remove   - Remove awg-warp components (keeps third-party AWG servers intact)"
+    echo "  install              - Install and configure awg-warp (WARP + AWG server)"
+    echo "    --port <port>      - Set custom AWG server listen port (default: auto, starting from 39548)"
+    echo "  remove               - Remove awg-warp components (keeps third-party AWG servers intact)"
     exit 1
 }
 

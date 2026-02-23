@@ -22,6 +22,7 @@ function usage {
   echo " -u <user> : User identifier (uniq field for vpn account)"
   echo " -s <server> : Server host for user connection"
   echo " -N <name> : AWG server name (default: auto-detect, e.g. awg0, awg1)"
+  echo " -P <port> : AWG server listen port (default: auto, starting from 39548)"
   echo " -I : Interface (default auto)"
   echo " -h : Usage"
   exit 1
@@ -166,7 +167,7 @@ fi
 
 SERVER_INTERFACE=$(ip -4 route ls | grep default | grep -Po '(?<=dev )(\S+)' | head -1)
 
-while getopts ":icdpqhLUu:I:s:N:" opt; do
+while getopts ":icdpqhLUu:I:s:N:P:" opt; do
   case $opt in
      i) INIT=1 ;;
      c) CREATE=1 ;;
@@ -178,6 +179,7 @@ while getopts ":icdpqhLUu:I:s:N:" opt; do
      u) USER="$OPTARG" ;;
      I) SERVER_INTERFACE="$OPTARG" ;;
      N) EXPLICIT_SERVER_NAME="$OPTARG" ;;
+     P) EXPLICIT_PORT="$OPTARG" ;;
      h) usage ;;
      s) SERVER_ENDPOINT="$OPTARG" ;;
     \?) echo "Invalid option: -$OPTARG" ; exit 1 ;;
@@ -199,6 +201,11 @@ if [ -n "${EXPLICIT_SERVER_NAME:-}" ]; then
         SERVER_IP_PREFIX=$(_auto_ip_prefix)
         SERVER_PORT=$(_auto_port)
     fi
+fi
+
+# Override SERVER_PORT if explicitly specified with -P
+if [ -n "${EXPLICIT_PORT:-}" ]; then
+    SERVER_PORT="$EXPLICIT_PORT"
 fi
 
 function reload_server {

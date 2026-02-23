@@ -16,6 +16,12 @@ cd awg-warp
 bash init.sh install
 ```
 
+Если нужно задать свой порт для AWG-сервера (по умолчанию — автовыбор, начиная с 39548):
+
+```bash
+bash init.sh install --port 27015
+```
+
 Скрипт автоматически:
 - Установит Go, amneziawg-go, awg-tools
 - Развернёт `awg-manager.sh` в `/etc/amnezia/amneziawg/`
@@ -90,6 +96,7 @@ bash /etc/amnezia/amneziawg/awg-manager.sh -U -u <имя>   # разблокир
 | `-u <user>` | Имя пользователя |
 | `-s <host>` | Внешний IP/домен сервера |
 | `-N <name>` | Имя AWG-интерфейса (по умолчанию auto: awg0, awg1…) |
+| `-P <port>` | Порт AWG-сервера (по умолчанию auto, начиная с 39548) |
 | `-I <iface>` | Сетевой интерфейс сервера (по умолчанию auto) |
 
 ## Полное удаление awg-warp
