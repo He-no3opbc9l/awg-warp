@@ -33,6 +33,52 @@ umask 0077
 
 HOME_DIR="/etc/amnezia/amneziawg"
 
+# ── Junk packet obfuscation parameters ────────────────────────────────────
+# Generate random AWG obfuscation parameters for this server instance.
+# These must match between server and all its clients.
+_generate_junk_params() {
+    local AWG_JC=$(( RANDOM % 8 + 1 ))              # 1-8
+    local AWG_JMIN=$(( RANDOM % 30 + 5 ))            # 5-34
+    local AWG_JMAX=$(( AWG_JMIN + RANDOM % 500 + 20 )) # Jmin+20 .. Jmin+519
+    local AWG_S1=$(( RANDOM % 200 + 15 ))             # 15-214
+    local AWG_S2=$(( RANDOM % 200 + 15 ))             # 15-214
+    local AWG_H1=$(( RANDOM * RANDOM + RANDOM ))      # large pseudo-random
+    local AWG_H2=$(( RANDOM * RANDOM + RANDOM ))
+    local AWG_H3=$(( RANDOM * RANDOM + RANDOM ))
+    local AWG_H4=$(( RANDOM * RANDOM + RANDOM ))
+
+    cat <<JEOF
+Jc = ${AWG_JC}
+Jmin = ${AWG_JMIN}
+Jmax = ${AWG_JMAX}
+S1 = ${AWG_S1}
+S2 = ${AWG_S2}
+H1 = ${AWG_H1}
+H2 = ${AWG_H2}
+H3 = ${AWG_H3}
+H4 = ${AWG_H4}
+JEOF
+}
+
+# Save generated junk params to keys/<server>/junk.params
+_save_junk_params() {
+    local params_file="keys/${SERVER_NAME}/junk.params"
+    if [ ! -f "$params_file" ]; then
+        _generate_junk_params > "$params_file"
+    fi
+}
+
+# Load junk params into AWG_JUNK_BLOCK variable (multiline)
+_load_junk_params() {
+    local params_file="keys/${SERVER_NAME}/junk.params"
+    if [ -f "$params_file" ]; then
+        AWG_JUNK_BLOCK=$(cat "$params_file")
+    else
+        # Fallback: generate on the fly (should not happen after init)
+        AWG_JUNK_BLOCK=$(_generate_junk_params)
+    fi
+}
+
 # ── Auto-detect free SERVER_NAME, IP prefix and port ──────────────────────
 # Find the first free awgN name (awg0, awg1, awg2 ...)
 _auto_server_name() {
@@ -296,6 +342,11 @@ function init {
         awg genkey | tee "keys/${SERVER_NAME}/private.key" | awg pubkey > "keys/${SERVER_NAME}/public.key"
     fi
 
+    # Generate and save random obfuscation parameters for this server
+    _save_junk_params
+    _load_junk_params
+    echo "Obfuscation parameters generated and saved"
+
     if [ -f "$SERVER_NAME.conf" ]; then
         echo "Server already initialized"
         exit 0
@@ -332,15 +383,7 @@ PostDown = iptables -t nat -D POSTROUTING -o ${SERVER_INTERFACE} -j MASQUERADE
 PostDown = iptables -D FORWARD -i ${SERVER_NAME} -o warp0 -j ACCEPT || true
 PostDown = iptables -D FORWARD -i warp0 -o ${SERVER_NAME} -m state --state RELATED,ESTABLISHED -j ACCEPT || true
 PostDown = bash ${WARP_HELPER} del ${SERVER_NAME} 2>/dev/null || true
-Jc = 2
-Jmin = 10
-Jmax = 50
-S1 = 78
-S2 = 63
-H1 = 1909976304
-H2 = 379167011
-H3 = 1086133991
-H4 = 1090042050
+${AWG_JUNK_BLOCK}
 
 EOF
     else
@@ -352,15 +395,7 @@ ListenPort = ${SERVER_PORT}
 PrivateKey = ${SERVER_PVT_KEY}
 PostUp = iptables -t nat -A POSTROUTING -o ${SERVER_INTERFACE} -j MASQUERADE
 PostDown = iptables -t nat -D POSTROUTING -o ${SERVER_INTERFACE} -j MASQUERADE
-Jc = 2
-Jmin = 10
-Jmax = 50
-S1 = 78
-S2 = 63
-H1 = 1909976304
-H2 = 379167011
-H3 = 1086133991
-H4 = 1090042050
+${AWG_JUNK_BLOCK}
 
 EOF
     fi
@@ -402,6 +437,9 @@ function create {
 
     USER_IP=$( get_new_ip )
 
+    # Load obfuscation parameters matching the server config
+    _load_junk_params
+
     mkdir "keys/${USER}"
     awg genkey | tee "keys/${USER}/private.key" | awg pubkey > "keys/${USER}/public.key"
     awg genpsk > "keys/${USER}/psk.key"
@@ -416,15 +454,7 @@ cat <<EOF > "keys/${USER}/${USER}.conf"
 PrivateKey = ${USER_PVT_KEY}
 Address = ${USER_IP}
 DNS = 8.8.8.8, 8.8.4.4
-Jc = 2
-Jmin = 10
-Jmax = 50
-S1 = 78
-S2 = 63
-H1 = 1909976304
-H2 = 379167011
-H3 = 1086133991
-H4 = 1090042050
+${AWG_JUNK_BLOCK}
 
 [Peer]
 PublicKey = ${SERVER_PUB_KEY}
