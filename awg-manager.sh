@@ -73,9 +73,20 @@ _load_junk_params() {
     local params_file="keys/${SERVER_NAME}/junk.params"
     if [ -f "$params_file" ]; then
         AWG_JUNK_BLOCK=$(cat "$params_file")
+    elif [ -f "${SERVER_NAME}.conf" ]; then
+        # Recover junk params from existing server config to avoid mismatch
+        AWG_JUNK_BLOCK=$(grep -E '^\s*(Jc|Jmin|Jmax|S1|S2|H1|H2|H3|H4)\s*=' "${SERVER_NAME}.conf")
+        if [ -n "$AWG_JUNK_BLOCK" ]; then
+            echo "$AWG_JUNK_BLOCK" > "$params_file"
+            echo "WARNING: junk.params recovered from ${SERVER_NAME}.conf" >&2
+        else
+            AWG_JUNK_BLOCK=$(_generate_junk_params)
+            echo "WARNING: no junk params found anywhere, generated new ones" >&2
+        fi
     else
         # Fallback: generate on the fly (should not happen after init)
         AWG_JUNK_BLOCK=$(_generate_junk_params)
+        echo "WARNING: no junk.params or server config found, generated new params" >&2
     fi
 }
 
