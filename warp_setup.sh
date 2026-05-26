@@ -203,7 +203,6 @@ EOF
 [Interface]
 PrivateKey = ${priv}
 Address = ${client_ipv4}/32, ${client_ipv6}/128
-DNS = 1.1.1.1
 Table = ${WARP_TABLE}
 FwMark = ${WARP_FWMARK}
 MTU = 1280
