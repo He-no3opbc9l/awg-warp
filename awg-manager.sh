@@ -23,6 +23,7 @@ function usage {
   echo " -s <server> : Server host for user connection"
   echo " -N <name> : AWG server name (default: auto-detect, e.g. awg0, awg1)"
   echo " -P <port> : AWG server listen port (default: auto, starting from 39548)"
+  echo " -V <ver> : AmneziaWG protocol version for obfuscation params: 1.0 (default) or 2.0"
   echo " -I : Interface (default auto)"
   echo " -h : Usage"
   exit 1
@@ -33,21 +34,71 @@ umask 0077
 
 HOME_DIR="/etc/amnezia/amneziawg"
 
+# ── AmneziaWG protocol version ─────────────────────────────────────────────
+# Selects which set of obfuscation parameters _generate_junk_params emits.
+#   1.0 (default) — Jc, Jmin, Jmax, S1, S2, H1-H4 (single values)
+#   2.0           — adds S3, S4, H1-H4 as ranges (x-y) and a DNS-shaped I1 packet
+# amneziawg-go has no explicit version field: the "version" is just the
+# parameter set. Both server and client read the same saved junk.params, so
+# symmetry is preserved automatically.
+AWG_VERSION="${AWG_VERSION:-1.0}"
+
 # ── Junk packet obfuscation parameters ────────────────────────────────────
 # Generate random AWG obfuscation parameters for this server instance.
 # These must match between server and all its clients.
+
+# Emit a disjoint H header range "start-end" inside a band starting at $1.
+# Bands are spaced 0x30000000 apart and each range stays within 0x11000000,
+# so H1..H4 ranges never overlap (required by amneziawg-go validation).
+_h_range() {
+    local base=$1
+    local start=$(( base + (RANDOM * RANDOM) % 268435456 ))   # +0 .. +0x10000000
+    local end=$(( start + RANDOM % 16777216 + 1 ))            # +1 .. +0x1000000
+    echo "${start}-${end}"
+}
+
+# DNS-query-shaped CPS signature for I1 (AmneziaWG 1.5+/2.0).
+# <r 2> = random transaction ID, followed by a literal standard A-query for
+# www.google.com. Mimics a real DNS request so the pre-handshake packet does
+# not look like random UDP to DPI.
+_AWG_I1_DNS='<r 2><b 0x010000010000000000000377777706676f6f676c6503636f6d0000010001>'
+
 _generate_junk_params() {
     local AWG_JC=$(( RANDOM % 8 + 1 ))              # 1-8
     local AWG_JMIN=$(( RANDOM % 30 + 5 ))            # 5-34
     local AWG_JMAX=$(( AWG_JMIN + RANDOM % 500 + 20 )) # Jmin+20 .. Jmin+519
     local AWG_S1=$(( RANDOM % 200 + 15 ))             # 15-214
     local AWG_S2=$(( RANDOM % 200 + 15 ))             # 15-214
-    local AWG_H1=$(( RANDOM * RANDOM + RANDOM ))      # large pseudo-random
-    local AWG_H2=$(( RANDOM * RANDOM + RANDOM ))
-    local AWG_H3=$(( RANDOM * RANDOM + RANDOM ))
-    local AWG_H4=$(( RANDOM * RANDOM + RANDOM ))
 
-    cat <<JEOF
+    if [ "$AWG_VERSION" = "2.0" ]; then
+        local AWG_S3=$(( RANDOM % 200 + 15 ))         # 15-214
+        local AWG_S4=$(( RANDOM % 200 + 15 ))         # 15-214
+        local AWG_H1=$(_h_range 268435456)            # band 0x10000000
+        local AWG_H2=$(_h_range 1073741824)           # band 0x40000000
+        local AWG_H3=$(_h_range 1879048192)           # band 0x70000000
+        local AWG_H4=$(_h_range 2684354560)           # band 0xA0000000
+
+        cat <<JEOF
+Jc = ${AWG_JC}
+Jmin = ${AWG_JMIN}
+Jmax = ${AWG_JMAX}
+S1 = ${AWG_S1}
+S2 = ${AWG_S2}
+S3 = ${AWG_S3}
+S4 = ${AWG_S4}
+H1 = ${AWG_H1}
+H2 = ${AWG_H2}
+H3 = ${AWG_H3}
+H4 = ${AWG_H4}
+I1 = ${_AWG_I1_DNS}
+JEOF
+    else
+        local AWG_H1=$(( RANDOM * RANDOM + RANDOM ))   # large pseudo-random
+        local AWG_H2=$(( RANDOM * RANDOM + RANDOM ))
+        local AWG_H3=$(( RANDOM * RANDOM + RANDOM ))
+        local AWG_H4=$(( RANDOM * RANDOM + RANDOM ))
+
+        cat <<JEOF
 Jc = ${AWG_JC}
 Jmin = ${AWG_JMIN}
 Jmax = ${AWG_JMAX}
@@ -58,6 +109,7 @@ H2 = ${AWG_H2}
 H3 = ${AWG_H3}
 H4 = ${AWG_H4}
 JEOF
+    fi
 }
 
 # Save generated junk params to keys/<server>/junk.params
@@ -75,7 +127,7 @@ _load_junk_params() {
         AWG_JUNK_BLOCK=$(cat "$params_file")
     elif [ -f "${SERVER_NAME}.conf" ]; then
         # Recover junk params from existing server config to avoid mismatch
-        AWG_JUNK_BLOCK=$(grep -E '^\s*(Jc|Jmin|Jmax|S1|S2|H1|H2|H3|H4)\s*=' "${SERVER_NAME}.conf")
+        AWG_JUNK_BLOCK=$(grep -E '^\s*(Jc|Jmin|Jmax|S1|S2|S3|S4|H1|H2|H3|H4|I1|I2|I3|I4|I5)\s*=' "${SERVER_NAME}.conf")
         if [ -n "$AWG_JUNK_BLOCK" ]; then
             echo "$AWG_JUNK_BLOCK" > "$params_file"
             echo "WARNING: junk.params recovered from ${SERVER_NAME}.conf" >&2
@@ -224,7 +276,7 @@ fi
 
 SERVER_INTERFACE=$(ip -4 route ls | grep default | grep -Po '(?<=dev )(\S+)' | head -1)
 
-while getopts ":icdpqhLUu:I:s:N:P:" opt; do
+while getopts ":icdpqhLUu:I:s:N:P:V:" opt; do
   case $opt in
      i) INIT=1 ;;
      c) CREATE=1 ;;
@@ -237,12 +289,18 @@ while getopts ":icdpqhLUu:I:s:N:P:" opt; do
      I) SERVER_INTERFACE="$OPTARG" ;;
      N) EXPLICIT_SERVER_NAME="$OPTARG" ;;
      P) EXPLICIT_PORT="$OPTARG" ;;
+     V) AWG_VERSION="$OPTARG" ;;
      h) usage ;;
      s) SERVER_ENDPOINT="$OPTARG" ;;
     \?) echo "Invalid option: -$OPTARG" ; exit 1 ;;
      :) echo "Option -$OPTARG requires an argument" ; exit 1 ;;
   esac
 done
+
+if [ "$AWG_VERSION" != "1.0" ] && [ "$AWG_VERSION" != "2.0" ]; then
+    echo "ERROR: -V must be 1.0 or 2.0 (got: ${AWG_VERSION})" >&2
+    exit 1
+fi
 
 [ $# -lt 1 ] && usage
 
@@ -342,6 +400,7 @@ function init {
     echo "AWG server: ${SERVER_NAME}"
     echo "Subnet: ${SERVER_IP_PREFIX}.0/24"
     echo "Listen port: ${SERVER_PORT}"
+    echo "AmneziaWG version: ${AWG_VERSION}"
 
     mkdir -p "keys/${SERVER_NAME}"
     echo -n "$SERVER_ENDPOINT" > "keys/.server"

@@ -26,7 +26,10 @@ colorized_echo() {
 }
 
 installing() {
-    # Parse optional arguments (e.g., --port 27015)
+    NO_WARP=0
+    AWG_VERSION="1.0"
+
+    # Parse optional arguments (e.g., --port 27015 --no-warp --awg-version 2.0)
     while [[ $# -gt 0 ]]; do
         case "$1" in
             --port)
@@ -39,6 +42,22 @@ installing() {
                     exit 1
                 fi
                 CUSTOM_PORT="$2"
+                shift 2
+                ;;
+            --no-warp)
+                NO_WARP=1
+                shift
+                ;;
+            --awg-version)
+                if [ -z "$2" ] || [[ "$2" == --* ]]; then
+                    colorized_echo red "Error: --awg-version requires a value (1.0 or 2.0)"
+                    exit 1
+                fi
+                if [ "$2" != "1.0" ] && [ "$2" != "2.0" ]; then
+                    colorized_echo red "Error: --awg-version must be 1.0 or 2.0"
+                    exit 1
+                fi
+                AWG_VERSION="$2"
                 shift 2
                 ;;
             *)
@@ -55,7 +74,11 @@ installing() {
     install_go
     install_awg_awg_tools
     install_awg_manager
-    install_warp
+    if [ "$NO_WARP" -eq 1 ]; then
+        colorized_echo yellow "Skipping WARP setup (--no-warp): AWG will route directly to the internet"
+    else
+        install_warp
+    fi
     init_awg_server
     print_summary
 }
@@ -64,7 +87,11 @@ print_summary() {
     echo ""
     colorized_echo green "╔══════════════════════════════════════════════╗"
     colorized_echo green "║    awg-warp installation complete!           ║"
-    colorized_echo green "║    Client → AWG → VPS → WARP → Internet      ║"
+    if [ "${NO_WARP:-0}" -eq 1 ]; then
+        colorized_echo green "║    Client → AWG → VPS → Internet             ║"
+    else
+        colorized_echo green "║    Client → AWG → VPS → WARP → Internet      ║"
+    fi
     colorized_echo green "╚══════════════════════════════════════════════╝"
     echo ""
     colorized_echo cyan "Next steps:"
@@ -359,15 +386,23 @@ init_awg_server() {
         colorized_echo cyan "Using custom port: ${CUSTOM_PORT}"
     fi
 
-    bash "$AWG_MANAGER" -i -s "$PUBLIC_IP" $PORT_ARG
+    local VERSION_ARG=""
+    if [ -n "${AWG_VERSION:-}" ]; then
+        VERSION_ARG="-V ${AWG_VERSION}"
+        colorized_echo cyan "Using AmneziaWG version: ${AWG_VERSION}"
+    fi
+
+    bash "$AWG_MANAGER" -i -s "$PUBLIC_IP" $PORT_ARG $VERSION_ARG
 }
 
 usage() {
-    echo "Usage: $0 {install [--port <port>]|remove}"
+    echo "Usage: $0 {install [--port <port>] [--no-warp] [--awg-version <1.0|2.0>]|remove}"
     echo ""
-    echo "  install              - Install and configure awg-warp (WARP + AWG server)"
-    echo "    --port <port>      - Set custom AWG server listen port (default: auto, starting from 39548)"
-    echo "  remove               - Remove awg-warp components (keeps third-party AWG servers intact)"
+    echo "  install                    - Install and configure awg-warp (WARP + AWG server)"
+    echo "    --port <port>            - Set custom AWG server listen port (default: auto, starting from 39548)"
+    echo "    --no-warp                - Install AWG only, routing directly to the internet (no WARP tunnel)"
+    echo "    --awg-version <1.0|2.0>  - AmneziaWG obfuscation parameter set (default: 1.0)"
+    echo "  remove                     - Remove awg-warp components (keeps third-party AWG servers intact)"
     exit 1
 }
 
