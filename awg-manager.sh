@@ -41,7 +41,7 @@ HOME_DIR="/etc/amnezia/amneziawg"
 # amneziawg-go has no explicit version field: the "version" is just the
 # parameter set. Both server and client read the same saved junk.params, so
 # symmetry is preserved automatically.
-AWG_VERSION="${AWG_VERSION:-1.0}"
+AWG_VERSION="${AWG_VERSION:-2.0}"
 
 # ── Junk packet obfuscation parameters ────────────────────────────────────
 # Generate random AWG obfuscation parameters for this server instance.
@@ -324,7 +324,17 @@ if [ -n "${EXPLICIT_PORT:-}" ]; then
 fi
 
 function reload_server {
-    awg syncconf ${SERVER_NAME} <(awg-quick strip ${SERVER_NAME})
+    if ! ip link show "${SERVER_NAME}" &>/dev/null; then
+        echo "WARNING: interface ${SERVER_NAME} is not up — config saved but not applied live." >&2
+        echo "         Bring it up with: awg-quick up ${SERVER_NAME}" >&2
+        echo "         Diagnose with:   systemctl status awg-quick@${SERVER_NAME}" >&2
+        return 1
+    fi
+    if ! awg syncconf ${SERVER_NAME} <(awg-quick strip ${SERVER_NAME}); then
+        echo "WARNING: failed to apply config to running interface ${SERVER_NAME}." >&2
+        echo "         The user is saved on disk; check: awg show ${SERVER_NAME}" >&2
+        return 1
+    fi
 }
 
 function get_new_ip {
@@ -476,7 +486,16 @@ EOF
     sysctl -w net.ipv4.ip_forward=1
 
     systemctl enable awg-quick@${SERVER_NAME}
-    awg-quick up ${SERVER_NAME} || true
+    if ! awg-quick up ${SERVER_NAME}; then
+        echo "" >&2
+        echo "WARNING: 'awg-quick up ${SERVER_NAME}' failed — the interface is NOT running." >&2
+        echo "         Users can be created but WILL NOT connect until this is fixed." >&2
+        echo "         Diagnose with:" >&2
+        echo "           awg-quick up ${SERVER_NAME}" >&2
+        echo "           systemctl status awg-quick@${SERVER_NAME}" >&2
+        echo "           journalctl -u awg-quick@${SERVER_NAME} --no-pager | tail -30" >&2
+        echo "" >&2
+    fi
 
     # If WARP tunnel is running, register this AWG interface for WARP routing
     local WARP_HELPER="/etc/amnezia/warp/warp_add_iface.sh"
@@ -510,7 +529,7 @@ function create {
     # Load obfuscation parameters matching the server config
     _load_junk_params
 
-    mkdir "keys/${USER}"
+    mkdir -p "keys/${USER}"
     awg genkey | tee "keys/${USER}/private.key" | awg pubkey > "keys/${USER}/public.key"
     awg genpsk > "keys/${USER}/psk.key"
 
@@ -533,14 +552,17 @@ AllowedIPs = 0.0.0.0/0
 PersistentKeepalive = 20
 PresharedKey = ${USER_PSK_KEY}
 EOF
-    add_user_to_server
-    reload_server
-
-    # Copy user config to awg-warp directory
+    # Save the client config to the awg-warp directory first, so the user
+    # always gets their config even if applying it to the live interface fails.
     local CONFIGS_DIR="/root/awg-warp"
     mkdir -p "$CONFIGS_DIR"
     cp "keys/${USER}/${USER}.conf" "${CONFIGS_DIR}/${USER}.conf"
-    echo "Config copied to ${CONFIGS_DIR}/${USER}.conf"
+
+    add_user_to_server
+    reload_server || true
+
+    echo "User '${USER}' created."
+    echo "Config: ${CONFIGS_DIR}/${USER}.conf"
 }
 
 cd $HOME_DIR

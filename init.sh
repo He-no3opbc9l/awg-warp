@@ -56,11 +56,67 @@ colorized_echo() {
     esac
 }
 
-installing() {
-    NO_WARP=0
-    AWG_VERSION="1.0"
+# Interactively ask for any option not already provided via flags.
+# Skipped entirely when stdin is not a TTY (e.g. `curl … | bash`), so
+# non-interactive installs fall back to the resolved defaults.
+prompt_options() {
+    if [ ! -t 0 ]; then
+        return 0
+    fi
 
-    # Parse optional arguments (e.g., --port 27015 --no-warp --awg-version 2.0)
+    echo ""
+    colorized_echo cyan "── Настройка установки (Enter — значение по умолчанию) ──"
+
+    if [ "$PORT_SET" -eq 0 ]; then
+        while true; do
+            read -rp "Порт AWG-сервера (Enter — случайный): " ans || ans=""
+            if [ -z "$ans" ]; then
+                CUSTOM_PORT=""
+                break
+            fi
+            if [[ "$ans" =~ ^[0-9]+$ ]] && [ "$ans" -ge 1 ] && [ "$ans" -le 65535 ]; then
+                CUSTOM_PORT="$ans"
+                break
+            fi
+            colorized_echo red "Некорректный порт. Введите число 1–65535 или оставьте пустым."
+        done
+    fi
+
+    if [ "$VERSION_SET" -eq 0 ]; then
+        while true; do
+            read -rp "Версия протокола AmneziaWG (1/2, Enter — 2): " ans || ans=""
+            case "$ans" in
+                ""|2|2.0) AWG_VERSION="2.0"; break ;;
+                1|1.0)    AWG_VERSION="1.0"; break ;;
+                *)        colorized_echo red "Введите 1 или 2." ;;
+            esac
+        done
+    fi
+
+    if [ "$WARP_SET" -eq 0 ]; then
+        while true; do
+            read -rp "Использовать WARP-туннель? (Y/n): " ans || ans=""
+            case "$ans" in
+                ""|[Yy]|[Yy][Ee][Ss]) NO_WARP=0; break ;;
+                [Nn]|[Nn][Oo])        NO_WARP=1; break ;;
+                *)                    colorized_echo red "Ответьте y или n." ;;
+            esac
+        done
+    fi
+    echo ""
+}
+
+installing() {
+    # Defaults; *_SET flags track whether an option came from a flag (which
+    # suppresses the matching interactive prompt).
+    CUSTOM_PORT=""
+    PORT_SET=0
+    AWG_VERSION="2.0"
+    VERSION_SET=0
+    NO_WARP=0
+    WARP_SET=0
+
+    # Parse optional arguments (e.g., --port 27015 --no-warp --awg-version 2)
     while [[ $# -gt 0 ]]; do
         case "$1" in
             --port)
@@ -73,22 +129,33 @@ installing() {
                     exit 1
                 fi
                 CUSTOM_PORT="$2"
+                PORT_SET=1
                 shift 2
                 ;;
             --no-warp)
                 NO_WARP=1
+                WARP_SET=1
+                shift
+                ;;
+            --warp)
+                NO_WARP=0
+                WARP_SET=1
                 shift
                 ;;
             --awg-version)
                 if [ -z "$2" ] || [[ "$2" == --* ]]; then
-                    colorized_echo red "Error: --awg-version requires a value (1.0 or 2.0)"
+                    colorized_echo red "Error: --awg-version requires a value (1 or 2)"
                     exit 1
                 fi
-                if [ "$2" != "1.0" ] && [ "$2" != "2.0" ]; then
-                    colorized_echo red "Error: --awg-version must be 1.0 or 2.0"
-                    exit 1
-                fi
-                AWG_VERSION="$2"
+                case "$2" in
+                    1|1.0) AWG_VERSION="1.0" ;;
+                    2|2.0) AWG_VERSION="2.0" ;;
+                    *)
+                        colorized_echo red "Error: --awg-version must be 1 or 2"
+                        exit 1
+                        ;;
+                esac
+                VERSION_SET=1
                 shift 2
                 ;;
             *)
@@ -97,6 +164,9 @@ installing() {
                 ;;
         esac
     done
+
+    # Ask for anything not set via flags (no-op on non-interactive stdin)
+    prompt_options
 
     check_running_as_root
     detect_os
@@ -440,13 +510,16 @@ init_awg_server() {
 }
 
 usage() {
-    echo "Usage: $0 {install [--port <port>] [--no-warp] [--awg-version <1.0|2.0>]|remove}"
+    echo "Usage: $0 {install [--port <port>] [--no-warp|--warp] [--awg-version <1|2>]|remove}"
     echo ""
-    echo "  install                    - Install and configure awg-warp (WARP + AWG server)"
-    echo "    --port <port>            - Set custom AWG server listen port (default: auto, starting from 39548)"
-    echo "    --no-warp                - Install AWG only, routing directly to the internet (no WARP tunnel)"
-    echo "    --awg-version <1.0|2.0>  - AmneziaWG obfuscation parameter set (default: 1.0)"
-    echo "  remove                     - Remove awg-warp components (keeps third-party AWG servers intact)"
+    echo "  install               - Install and configure awg-warp (interactive if no flags given)"
+    echo "                          Run with no flags in a terminal to be prompted for port,"
+    echo "                          AmneziaWG version and WARP. Flags below skip the prompts."
+    echo "    --port <port>       - Custom AWG server listen port (default: random, from 39548)"
+    echo "    --no-warp           - Install AWG only, routing directly to the internet (no WARP)"
+    echo "    --warp              - Force WARP tunnel (skip the WARP prompt)"
+    echo "    --awg-version <1|2> - AmneziaWG obfuscation parameter set (default: 2)"
+    echo "  remove                - Remove awg-warp components (keeps third-party AWG servers intact)"
     exit 1
 }
 
