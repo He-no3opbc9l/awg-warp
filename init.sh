@@ -168,7 +168,7 @@ install_go() {
 
     # Fetch the latest stable Go version from the official API
     local GO_VERSION
-    GO_VERSION=$(curl -fsSL "https://go.dev/dl/?mode=json" 2>/dev/null | jq -r '.[0].version' | sed 's/^go//')
+    GO_VERSION=$(curl -fsSL --max-time 15 "https://go.dev/dl/?mode=json" 2>/dev/null | jq -r '.[0].version' | sed 's/^go//')
     if [ -z "$GO_VERSION" ]; then
         colorized_echo yellow "Could not fetch latest Go version, using fallback 1.23.6"
         GO_VERSION="1.23.6"
@@ -180,11 +180,29 @@ install_go() {
     TEMP_DIR=$(mktemp -d)
 
     cd "$TEMP_DIR"
-    wget -q "https://go.dev/dl/${GO_ARCHIVE}" || {
-        colorized_echo red "Failed to download Go ${GO_VERSION}"
-        rm -rf "$TEMP_DIR"
-        exit 1
-    }
+
+    # Download Go. go.dev/dl/<file> redirects to dl.google.com, which can be
+    # slow or blocked in some regions. Show progress, abort on stall
+    # (<10 KB/s for 30s), retry, then fall back to the golang.google.cn mirror.
+    # -q/silent hides stalls and looks like a freeze, so we avoid it here.
+    local GO_URL="https://go.dev/dl/${GO_ARCHIVE}"
+    local GO_MIRROR="https://golang.google.cn/dl/${GO_ARCHIVE}"
+    local CURL_OPTS=(-fL --connect-timeout 15 --speed-limit 10240 --speed-time 30 --retry 3 --retry-delay 3 -o "$GO_ARCHIVE")
+
+    colorized_echo blue "Downloading ${GO_ARCHIVE} from go.dev..."
+    if ! curl "${CURL_OPTS[@]}" "$GO_URL"; then
+        colorized_echo yellow "go.dev download failed or stalled — trying mirror golang.google.cn..."
+        if ! curl "${CURL_OPTS[@]}" "$GO_MIRROR"; then
+            colorized_echo red "Failed to download Go ${GO_VERSION} from both go.dev and the mirror."
+            colorized_echo yellow "Your server likely can't reach the Go CDN. Options:"
+            colorized_echo yellow "  1. Install Go manually, then re-run this script (it will skip Go):"
+            colorized_echo yellow "       wget ${GO_URL}"
+            colorized_echo yellow "       rm -rf /usr/local/go && tar -C /usr/local -xzf ${GO_ARCHIVE}"
+            colorized_echo yellow "  2. Or install via apt:  apt-get install -y golang-go"
+            rm -rf "$TEMP_DIR"
+            exit 1
+        fi
+    fi
 
     rm -rf /usr/local/go
     tar -C /usr/local -xzf "$GO_ARCHIVE" || {
