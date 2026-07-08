@@ -2,6 +2,37 @@
 
 set -e
 
+# Directory this script was launched from (the cloned repo). Used to install
+# awg-manager.sh / warp_setup.sh from the local checkout instead of downloading.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Install a script file to $1 (dest), preferring the local copy at
+# $SCRIPT_DIR/<basename> and falling back to downloading from $2 (raw URL).
+# Downloads use curl with progress + stall-timeout + retries so they don't
+# silently hang like `wget -q` when raw.githubusercontent.com is throttled.
+install_script_file() {
+    local dest="$1"
+    local url="$2"
+    local name
+    name="$(basename "$dest")"
+    local local_src="${SCRIPT_DIR}/${name}"
+
+    if [ -f "$local_src" ] && [ "$local_src" != "$dest" ]; then
+        colorized_echo blue "Using local ${name} from ${SCRIPT_DIR}"
+        cp "$local_src" "$dest"
+        return 0
+    fi
+
+    colorized_echo blue "Downloading ${name}..."
+    if ! curl -fL --connect-timeout 15 --speed-limit 1024 --speed-time 30 \
+              --retry 3 --retry-delay 3 -o "$dest" "$url"; then
+        colorized_echo red "Failed to download ${name} from ${url}"
+        colorized_echo yellow "If GitHub is blocked, copy it manually from the cloned repo:"
+        colorized_echo yellow "    cp ${SCRIPT_DIR}/${name} ${dest}"
+        return 1
+    fi
+}
+
 colorized_echo() {
     local color=$1
     local text=$2
@@ -321,10 +352,8 @@ install_awg_manager() {
         exit 1
     }
 
-    wget -q -O "$AWG_SCRIPT" https://raw.githubusercontent.com/He-no3opbc9l/awg-warp/main/awg-manager.sh || {
-        colorized_echo red "Failed to download awg-manager.sh"
-        exit 1
-    }
+    install_script_file "$AWG_SCRIPT" \
+        "https://raw.githubusercontent.com/He-no3opbc9l/awg-warp/main/awg-manager.sh" || exit 1
 
     chmod 700 "$AWG_SCRIPT"
 
@@ -346,12 +375,9 @@ install_warp() {
         exit 1
     }
 
-    # Download warp_setup.sh
-    local SCRIPT_URL="https://raw.githubusercontent.com/He-no3opbc9l/awg-warp/main/warp_setup.sh"
-    wget -q -O "$WARP_SETUP" "$SCRIPT_URL" || {
-        colorized_echo red "Failed to download warp_setup.sh"
-        exit 1
-    }
+    # Install warp_setup.sh (prefer local copy, fall back to download)
+    install_script_file "$WARP_SETUP" \
+        "https://raw.githubusercontent.com/He-no3opbc9l/awg-warp/main/warp_setup.sh" || exit 1
     chmod 700 "$WARP_SETUP"
     colorized_echo green "WARP setup script installed to ${WARP_SETUP}"
 
